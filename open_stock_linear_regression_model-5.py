@@ -9,161 +9,128 @@ Original file is located at
 # Install Packages
 """
 
-
-import pandas as pd
-
+import streamlit as st
 import yfinance as yf
-
-
+import pandas as pd
 import pandas_ta as ta
-
-"""#Stock History"""
-
-OPEN_stock = yf.Ticker("OPEN")
-print(OPEN_stock)
-OPEN_stock_history = OPEN_stock.history(start="2025-07-01", end="2025-12-18")
-print(OPEN_stock_history)
-
-"""#Calculations
-
-##Rolling Volatility
-"""
-
-returns = OPEN_stock_history['Close'].pct_change()
-OPEN_stock_history['Rolling Volatility'] = ta.stdev(returns, length=14)
-OPEN_stock_history['Rolling Volatility']
-OPEN_stock_history['Rolling Volatility'].dropna()
-
-"""##Simple Moving Average"""
-
-OPEN_stock_history['SMA_14'] = ta.sma(OPEN_stock_history['Close'], length=14)
-OPEN_stock_history['SMA_14']
-OPEN_stock_history['SMA_14'].dropna()
-
-"""##Exponentional Strength Index
-
-"""
-
-OPEN_stock_history['EMA_14'] = ta.ema(OPEN_stock_history['Close'], length = 14)
-OPEN_stock_history['EMA_14']
-OPEN_stock_history['EMA_14'].dropna()
-
-"""##Relative Strength Index"""
-
-OPEN_stock_history['RSI'] = ta.rsi(OPEN_stock_history['Close'])
-OPEN_stock_history['RSI']
-OPEN_stock_history['RSI'].dropna()
-
-OPEN_stock_history['Target Close'] = OPEN_stock_history['Close'].shift(-1)
-
-"""#Table of Calculations"""
-
-OPEN_stock_history = OPEN_stock_history.dropna()
-
-"""#Splitting"""
-
-y = OPEN_stock_history['Target Close']
-y
-
-X = OPEN_stock_history.drop(['Close', 'Target Close'], axis = 1)
-X
-
-OPEN_stock_history = OPEN_stock_history.sort_index()
-split_index = int(len(OPEN_stock_history)*0.8)
-
-X_train = X.iloc[:split_index]
-X_test = X.iloc[split_index:]
-
-y_train = y.iloc[:split_index]
-y_test = y.iloc[split_index:]
-
-"""#Linear Regression"""
-
 from sklearn.linear_model import LinearRegression
-
-lr = LinearRegression()
-lr.fit(X_train, y_train)
-
-y_learn_train_pred = lr.predict(X_train)
-y_learn_test_pred = lr.predict(X_test)
-
-y_learn_train_pred
-
-y_learn_test_pred
-
-"""#Error Identification"""
-
-from sklearn.metrics import mean_squared_error, r2_score
-lr_train_mse = mean_squared_error(y_train, y_learn_train_pred)
-lr_test_mse = mean_squared_error(y_test, y_learn_test_pred)
-
-lr_train_r2 = r2_score(y_train, y_learn_train_pred)
-lr_test_r2 = r2_score(y_test, y_learn_test_pred)
-
-print('lr_train_mse =',lr_train_mse, 'lr_train_r2 =',lr_train_r2, 'lr_test_mse =', lr_test_mse, 'lr_test_r2 =',lr_test_r2)
-
-lr_data = pd.DataFrame([
-    ['Linear Regressions',lr_train_mse,lr_train_r2,lr_test_mse,lr_test_r2]
-    ],
-             columns = ['Method','Training MSE','Training R2','Testing MSE','Testing R2'])
-lr_data
-
-"""#Random Forest Regression"""
-
 from sklearn.ensemble import RandomForestRegressor
-
-rf = RandomForestRegressor(max_depth=2, random_state=100)
-rf.fit(X_train, y_train)
-
-rf_train_predict = rf.predict(X_train)
-rf_test_predict = rf.predict(X_test)
-
-rf_train_predict
-
-rf_test_predict
-
-"""##Random Forest Error"""
-
-rf_train_predict_mse = mean_squared_error(y_train, rf_train_predict)
-rf_test_predict_mse = mean_squared_error(y_test, rf_test_predict)
-
-rf_train_predict_r2 = r2_score(y_train, rf_train_predict)
-rf_test_predict_r2 = r2_score(y_test, rf_test_predict)
-
-rf_data = pd.DataFrame([['Random Forest Regression',rf_train_predict_mse, rf_test_predict_mse, rf_train_predict_r2, rf_test_predict_r2]],
-             columns = ['Method', 'Training MSE', 'Training R2', 'Testing MSE', 'Testing R2'])
-rf_data
-
-"""#Regression Comparison"""
-
-OPEN_regression_comparison = pd.concat([lr_data, rf_data], axis =0)
-
-OPEN_regression_comparison
-
-OPEN_regression_comparison.reset_index(drop=True, inplace=True)
-OPEN_regression_comparison
-
-"""#Linear Regression Display"""
-
+from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 import numpy as np
 
-plt.figure(figsize=(6,6))
-plt.scatter(x=y_test, y=y_learn_test_pred)
+st.title("Stock Prediction Linear Regression Model")
 
+# ------------------ 1. User Inputs ------------------
+ticker_symbol = st.text_input("Enter stock ticker:", value="OPEN")
+start_date = st.date_input("Start Date", pd.to_datetime("2025-07-01"))
+end_date = st.date_input("End Date", pd.to_datetime("2025-12-18"))
 
-plt.xlabel('Training')
-plt.ylabel('Predicted')
-plt.title('Linear Regression Model')
+# ------------------ 2. Fetch stock data ------------------
+@st.cache_data
+def get_stock_data(ticker, start, end):
+    stock = yf.Ticker(ticker)
+    df = stock.history(start=start, end=end)
+    return df
 
-z = np.polyfit(y_test, y_learn_test_pred, 1)
+df = get_stock_data(ticker_symbol, start_date, end_date)
+
+if df.empty:
+    st.error("No data fetched. Check ticker or dates.")
+    st.stop()
+
+st.subheader("Stock Data")
+st.dataframe(df.tail())
+
+# ------------------ 3. Compute technical indicators ------------------
+df['Rolling Volatility'] = ta.stdev(df['Close'].pct_change(), length=14)
+df['SMA_14'] = ta.sma(df['Close'], length=14)
+df['EMA_14'] = ta.ema(df['Close'], length=14)
+df['RSI'] = ta.rsi(df['Close'])
+
+# ------------------ 4. Create next-day target ------------------
+df['Target Close'] = df['Close'].shift(-1)
+
+# Drop rows with NaN (from indicators or target)
+df = df.dropna()
+
+st.subheader("Calculated Features")
+st.dataframe(df.tail())
+
+# ------------------ 5. Feature/target split ------------------
+X = df.drop(['Close', 'Target Close'], axis=1)
+y = df['Target Close']
+
+# ------------------ 6. Time-series train/test split ------------------
+df = df.sort_index()
+split_index = int(len(df) * 0.8)
+
+X_train, X_test = X.iloc[:split_index], X.iloc[split_index:]
+y_train, y_test = y.iloc[:split_index], y.iloc[split_index:]
+
+# ------------------ 7. Train Linear Regression ------------------
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+
+y_train_pred_lr = lr.predict(X_train)
+y_test_pred_lr = lr.predict(X_test)
+
+# ------------------ 8. Train Random Forest ------------------
+rf = RandomForestRegressor(max_depth=2, random_state=100)
+rf.fit(X_train, y_train)
+
+y_train_pred_rf = rf.predict(X_train)
+y_test_pred_rf = rf.predict(X_test)
+
+# ------------------ 9. Evaluate models ------------------
+st.subheader("Model Performance")
+perf_df = pd.DataFrame([
+    ['Linear Regression',
+     round(mean_squared_error(y_train, y_train_pred_lr),4),
+     round(r2_score(y_train, y_train_pred_lr),4),
+     round(mean_squared_error(y_test, y_test_pred_lr),4),
+     round(r2_score(y_test, y_test_pred_lr),4)],
+    ['Random Forest',
+     round(mean_squared_error(y_train, y_train_pred_rf),4),
+     round(r2_score(y_train, y_train_pred_rf),4),
+     round(mean_squared_error(y_test, y_test_pred_rf),4),
+     round(r2_score(y_test, y_test_pred_rf),4)]
+], columns=['Method','Training MSE','Training R2','Testing MSE','Testing R2'])
+st.dataframe(perf_df)
+
+# ------------------ 10. Interactive Plot: Linear Regression Actual vs Predicted ------------------
+import plotly.express as px
+
+st.subheader("Linear Regression: Actual vs Predicted (Test Set)")
+
+# Create a dataframe for plotting
+plot_df = pd.DataFrame({
+    "Actual Close": y_test,
+    "Predicted Close": y_test_pred_lr
+})
+
+fig = px.scatter(
+    plot_df,
+    x="Actual Close",
+    y="Predicted Close",
+    labels={"x":"Actual Close", "y":"Predicted Close"},
+    title="Linear Regression Test Set",
+    hover_data={"Actual Close":":.2f", "Predicted Close":":.2f"}
+)
+
+# Add a regression line
+z = np.polyfit(y_test, y_test_pred_lr, 1)
 p = np.poly1d(z)
+plot_df['Regression Line'] = p(plot_df["Actual Close"])
+fig.add_traces(px.line(plot_df, x="Actual Close", y="Regression Line").data)
 
-plt.plot(y_test, p(y_test), c="#9CAE00")
+st.plotly_chart(fig, use_container_width=True)
 
-latest_price = X.tail(1)
-next_day_lr = round(lr.predict(latest_price)[0],2)
-next_day_rf= round(rf.predict(latest_price)[0],2)
+# ------------------ 11. Next-Day Prediction ------------------
+st.subheader("Next-Day Predicted Close")
+latest_features = X.tail(1)
+next_day_lr = round(float(lr.predict(latest_features)[0]),2)
+next_day_rf = round(float(rf.predict(latest_features)[0]),2)
 
-print("Next Day Predicted Close (Linear Regression): $",next_day_lr)
-print("Next Day Predicted Close (Regression Forest): $",next_day_rf)
+st.write(f"Linear Regression predicted next-day close: **${next_day_lr}**")
+st.write(f"Random Forest predicted next-day close: **${next_day_rf}**")
