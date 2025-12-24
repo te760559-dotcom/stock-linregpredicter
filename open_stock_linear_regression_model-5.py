@@ -9,13 +9,11 @@ Original file is located at
 # Install Packages
 """
 
-pip install yfinance
 
 import pandas as pd
 
 import yfinance as yf
 
-pip install pandas-ta
 
 import pandas_ta as ta
 
